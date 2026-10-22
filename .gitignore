@@ -20,3 +20,6 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# 扫描快照缓存
+.cache/

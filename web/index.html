@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>财报期权扫描 · IV Crush Dashboard</title>
+<style>
+:root{
+  --bg:#f4f6f8; --panel:#ffffff; --panel2:#fafbfc; --line:#e2e6ea; --line2:#eef1f4;
+  --text:#1a2028; --muted:#68727e; --dim:#8b949e;
+  --accent:#1f6feb; --accent-bg:#e8f0fe;
+  --pass:#0d7a6f; --pass-bg:#e3f4f1;
+  --warn:#9a5b00; --warn-bg:#fdf1de;
+  --fail:#b42318; --fail-bg:#fdeceb;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --shadow:0 1px 2px rgba(16,24,40,.05),0 4px 12px rgba(16,24,40,.06);
+}
+html[data-theme="dark"]{
+  --bg:#0e1116; --panel:#161b22; --panel2:#1b2129; --line:#262d36; --line2:#1f262e;
+  --text:#e6edf3; --muted:#9aa5b1; --dim:#6e7885;
+  --accent:#4d8df6; --accent-bg:#152238;
+  --pass:#4fd1c5; --pass-bg:#0f2b28;
+  --warn:#e3a008; --warn-bg:#2b2210;
+  --fail:#f87171; --fail-bg:#2c1618;
+  --shadow:0 1px 2px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+  font:13px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  -webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.2px}
+
+/* ---------- 顶栏 ---------- */
+header{position:sticky;top:0;z-index:40;background:var(--panel);border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:14px;padding:10px 16px;flex-wrap:wrap}
+.brand{font-weight:650;font-size:14px;letter-spacing:.2px}
+.brand span{color:var(--muted);font-weight:400;font-size:12px;margin-left:8px}
+.hmeta{color:var(--muted);font-size:12px;display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.hmeta b{color:var(--text);font-weight:600}
+.spacer{flex:1}
+.btn{border:1px solid var(--line);background:var(--panel);padding:5px 11px;border-radius:6px;cursor:pointer;
+  font-size:12px;white-space:nowrap;transition:.12s}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{filter:brightness(1.08);color:#fff}
+.btn.ghost{background:transparent}
+.btn:disabled{opacity:.5;cursor:default}
+
+/* ---------- 布局 ---------- */
+.wrap{display:flex;align-items:flex-start;gap:0}
+aside{width:268px;flex:0 0 268px;background:var(--panel);border-right:1px solid var(--line);
+  padding:14px;position:sticky;top:49px;height:calc(100vh - 49px);overflow:auto}
+aside.hidden{display:none}
+main{flex:1;min-width:0;padding:14px 16px 60px}
+
+/* ---------- KPI ---------- */
+.kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:9px 11px;box-shadow:var(--shadow)}
+.kpi .lab{color:var(--muted);font-size:11px;letter-spacing:.3px;text-transform:uppercase}
+.kpi .val{font-size:21px;font-weight:650;margin-top:2px;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.kpi .sub{color:var(--dim);font-size:11px;margin-top:1px}
+.kpi.pass .val{color:var(--pass)}
+.kpi.fail .val{color:var(--warn)}
+
+/* ---------- 淘汰分布 ---------- */
+.cats{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:12px}
+.cats h4{margin:0 0 8px;font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.3px;text-transform:uppercase}
+.catrow{display:grid;grid-template-columns:74px 1fr 40px;gap:8px;align-items:center;margin:3px 0;cursor:pointer;font-size:12px}
+.catrow:hover .catbar i{filter:brightness(1.12)}
+.catbar{height:8px;background:var(--line2);border-radius:4px;overflow:hidden}
+.catbar i{display:block;height:100%;background:var(--dim);border-radius:4px;transition:.2s}
+.catrow.on .catbar i{background:var(--accent)}
+.catrow .cn{color:var(--muted)}
+.catrow .cv{text-align:right;font-family:var(--mono);color:var(--muted)}
+
+/* ---------- 标签页 ---------- */
+.tabs{display:flex;gap:4px;margin-bottom:10px;border-bottom:1px solid var(--line);align-items:center;flex-wrap:wrap}
+.tab{padding:7px 12px;cursor:pointer;border:none;background:none;color:var(--muted);font-size:12.5px;
+  border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab:hover{color:var(--text)}
+.tab.on{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+.tab .n{font-family:var(--mono);font-size:11px;background:var(--line2);border-radius:9px;padding:1px 6px;margin-left:5px}
+.tab.on .n{background:var(--accent-bg);color:var(--accent)}
+
+.toolbar{display:flex;gap:8px;align-items:center;margin-left:auto;flex-wrap:wrap}
+.toolbar input[type=search]{width:150px;padding:5px 9px;border:1px solid var(--line);border-radius:6px;background:var(--panel2)}
+.toolbar input[type=search]:focus{outline:none;border-color:var(--accent)}
+.chk{display:flex;align-items:center;gap:5px;color:var(--muted);font-size:12px;cursor:pointer;user-select:none}
+
+/* ---------- 表格 ---------- */
+.tablebox{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;box-shadow:var(--shadow)}
+.scroll{overflow:auto;max-height:calc(100vh - 300px)}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+thead th{position:sticky;top:0;background:var(--panel2);border-bottom:1px solid var(--line);
+  padding:7px 9px;text-align:right;font-weight:600;color:var(--muted);white-space:nowrap;font-size:11px;
+  letter-spacing:.2px;cursor:pointer;z-index:2}
+thead th:first-child,thead th:nth-child(2){text-align:left}
+thead th:hover{color:var(--accent)}
+thead th .arrow{opacity:.45;font-size:9px;margin-left:2px}
+tbody td{padding:6px 9px;text-align:right;border-bottom:1px solid var(--line2);white-space:nowrap}
+tbody td:first-child,tbody td:nth-child(2){text-align:left}
+tbody tr{cursor:pointer}
+tbody tr:hover{background:var(--panel2)}
+tbody tr.sel{background:var(--accent-bg)}
+.sym{font-family:var(--mono);font-weight:650;letter-spacing:.3px}
+.nm{color:var(--muted);max-width:190px;overflow:hidden;text-overflow:ellipsis;display:inline-block;vertical-align:bottom}
+.pos{color:var(--pass)} .neg{color:var(--warn)}
+.pill{display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;line-height:1.5}
+.pill.p{background:var(--pass-bg);color:var(--pass)}
+.pill.w{background:var(--warn-bg);color:var(--warn)}
+.pill.f{background:var(--fail-bg);color:var(--fail)}
+.pill.g{background:var(--line2);color:var(--muted);font-weight:500}
+.famous{font-size:9px;border:1px solid var(--warn);color:var(--warn);border-radius:3px;padding:0 3px;margin-left:4px;vertical-align:1px}
+.gapbar{display:inline-block;width:46px;height:6px;background:var(--line2);border-radius:3px;overflow:hidden;vertical-align:middle;margin-right:6px}
+.gapbar i{display:block;height:100%;background:var(--warn)}
+.empty{padding:44px 20px;text-align:center;color:var(--muted)}
+.empty b{display:block;font-size:14px;color:var(--text);margin-bottom:6px}
+
+/* ---------- 参数面板 ---------- */
+aside h3{margin:0 0 10px;font-size:12px;letter-spacing:.4px;text-transform:uppercase;color:var(--muted)}
+.fld{margin-bottom:9px}
+.fld label{display:block;font-size:11.5px;color:var(--muted);margin-bottom:3px}
+.fld input[type=number],.fld input[type=date]{width:100%;padding:5px 8px;border:1px solid var(--line);
+  border-radius:6px;background:var(--panel2);font-family:var(--mono);font-size:12px}
+.fld input:focus{outline:none;border-color:var(--accent)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.hint{color:var(--dim);font-size:11px;line-height:1.5;margin:8px 0 12px;padding-top:8px;border-top:1px dashed var(--line)}
+.side-actions{display:flex;flex-direction:column;gap:7px}
+.side-actions .btn{padding:7px}
+
+/* ---------- 抽屉 ---------- */
+.drawer{position:fixed;top:0;right:0;bottom:0;width:520px;max-width:94vw;background:var(--panel);
+  border-left:1px solid var(--line);box-shadow:-8px 0 28px rgba(16,24,40,.14);transform:translateX(102%);
+  transition:transform .18s ease;z-index:60;display:flex;flex-direction:column}
+.drawer.on{transform:none}
+.dhead{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:flex-start;gap:10px}
+.dhead .t{font-size:17px;font-weight:700;font-family:var(--mono)}
+.dhead .s{color:var(--muted);font-size:12px;margin-top:2px}
+.dbody{overflow:auto;padding:14px 16px 40px}
+.dsec{margin-bottom:16px}
+.dsec h5{margin:0 0 7px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px}
+.kv{display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px dotted var(--line)}
+.kv span{color:var(--muted);font-size:12px}
+.kv b{font-family:var(--mono);font-weight:600;font-size:12.5px}
+ul.why{margin:0;padding-left:16px}
+ul.why li{margin:3px 0;line-height:1.55}
+.ladder{width:100%;font-size:11.5px;border-collapse:collapse}
+.ladder th{text-align:right;color:var(--muted);font-weight:600;padding:3px 5px;border-bottom:1px solid var(--line)}
+.ladder td{padding:3px 5px;text-align:right;border-bottom:1px solid var(--line2);font-family:var(--mono)}
+.ladder tr.pick{background:var(--pass-bg)}
+.ladder tr.pick td{font-weight:700;color:var(--pass)}
+.ladder tr:hover{background:var(--panel2)}
+.rbar{height:5px;background:var(--line2);border-radius:3px;overflow:hidden;width:44px;display:inline-block;vertical-align:middle}
+.rbar i{display:block;height:100%;background:var(--accent)}
+.links a{display:inline-block;margin:0 10px 6px 0;font-size:12px;color:var(--accent);text-decoration:none}
+.links a:hover{text-decoration:underline}
+
+/* ---------- 进度 ---------- */
+.mask{position:fixed;inset:0;background:rgba(10,14,20,.42);display:none;align-items:center;justify-content:center;z-index:80}
+.mask.on{display:flex}
+.modal{background:var(--panel);border-radius:10px;padding:20px 22px;width:400px;box-shadow:0 12px 40px rgba(0,0,0,.28)}
+.modal h4{margin:0 0 4px;font-size:14px}
+.modal p{margin:0 0 12px;color:var(--muted);font-size:12px}
+.pbar{height:7px;background:var(--line2);border-radius:4px;overflow:hidden}
+.pbar i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+.pinfo{display:flex;justify-content:space-between;color:var(--muted);font-size:11.5px;margin-top:7px;font-family:var(--mono)}
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%) translateY(20px);background:#111827;color:#fff;
+  padding:8px 14px;border-radius:7px;font-size:12px;opacity:0;transition:.2s;z-index:90;pointer-events:none}
+.toast.on{opacity:1;transform:translateX(-50%)}
+@media(max-width:1100px){.kpis{grid-template-columns:repeat(2,1fr)}aside{position:static;height:auto;width:100%;flex:1 1 100%}
+  .wrap{flex-wrap:wrap}.scroll{max-height:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">财报期权扫描<span>IV Crush · 卖方 Put 硬门槛</span></div>
+  <div class="hmeta" id="hmeta"></div>
+  <div class="spacer"></div>
+  <button class="btn ghost" id="btnAside">参数</button>
+  <button class="btn ghost" id="btnTheme">深色</button>
+  <button class="btn" id="btnRefresh">重新抓取</button>
+</header>
+
+<div class="wrap">
+  <aside id="aside">
+    <h3>扫描参数</h3>
+    <div class="two">
+      <div class="fld"><label>起始日</label><input type="date" id="p_start"></div>
+      <div class="fld"><label>结束日</label><input type="date" id="p_end"></div>
+    </div>
+    <div style="display:flex;gap:6px;margin:-4px 0 9px">
+      <button class="btn ghost" id="btnThisWeek" style="flex:1;padding:3px 6px;font-size:11.5px">本周剩余</button>
+      <button class="btn ghost" id="btnNextWeek" style="flex:1;padding:3px 6px;font-size:11.5px">下周一整周</button>
+    </div>
+    <div class="fld"><label>最小市值（亿美元）</label><input type="number" id="p_cap" step="5" min="0"></div>
+    <div class="two">
+      <div class="fld"><label>股价下限 $</label><input type="number" id="p_pmin" step="1" min="0"></div>
+      <div class="fld"><label>股价上限 $</label><input type="number" id="p_pmax" step="10" min="0"></div>
+    </div>
+    <div class="two">
+      <div class="fld"><label>年化 ROI ≥ %</label><input type="number" id="p_roi" step="5" min="0"></div>
+      <div class="fld"><label>持仓量 ≥ 张</label><input type="number" id="p_oi" step="50" min="0"></div>
+    </div>
+    <div class="two">
+      <div class="fld"><label>点差上限 %</label><input type="number" id="p_spread" step="5" min="0" max="100"></div>
+      <div class="fld"><label>最小剩余天数</label><input type="number" id="p_dte" step="1" min="1" max="30"></div>
+    </div>
+    <div class="fld"><label>并发数</label><input type="number" id="p_workers" step="1" min="1" max="16"></div>
+    <label class="chk" style="margin:2px 0 10px"><input type="checkbox" id="p_passed"> 含已公布场次（复盘）</label>
+    <div class="side-actions">
+      <button class="btn primary" id="btnApply">应用筛选（不重新抓数据）</button>
+      <button class="btn" id="btnReset">恢复默认</button>
+    </div>
+    <div class="hint">
+      改门槛只重算，不联网，秒出。<br>
+      但报价会变：真要下单前请点「重新抓取」。<br>
+      抓取一次约 30–90 秒，8 并发。
+    </div>
+    <div class="hint" style="border:none;padding-top:0">
+      数据源：<a href="https://www.nasdaq.com/market-activity/earnings" target="_blank" rel="noopener">Nasdaq 财报日历</a> ·
+      <a href="https://www.nasdaq.com/market-activity/stocks/aapl/option-chain" target="_blank" rel="noopener">Nasdaq 期权链</a><br>
+      硬门槛只过滤"能不能卖、值不值卖"。基本面、评级、历史跳空、IV Rush 仍需逐只深评。
+    </div>
+  </aside>
+
+  <main>
+    <div class="kpis" id="kpis"></div>
+    <div class="cats" id="cats" style="display:none"></div>
+
+    <div class="tabs" id="tabs">
+      <button class="tab on" data-tab="pass">适合做<span class="n" id="n_pass">0</span></button>
+      <button class="tab" data-tab="rej">不适合做<span class="n" id="n_rej">0</span></button>
+      <button class="tab" data-tab="all">全部<span class="n" id="n_all">0</span></button>
+      <div class="toolbar">
+        <input type="search" id="q" placeholder="代码 / 公司名">
+        <label class="chk"><input type="checkbox" id="famous"> 只看名企</label>
+      </div>
+    </div>
+
+    <div class="tablebox">
+      <div class="scroll">
+        <table id="tbl">
+          <thead id="thead"></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+        <div class="empty" id="empty" style="display:none"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="drawer" id="drawer">
+  <div class="dhead">
+    <div style="flex:1">
+      <div class="t" id="d_sym">—</div>
+      <div class="s" id="d_sub"></div>
+    </div>
+    <button class="btn ghost" id="d_close">关闭</button>
+  </div>
+  <div class="dbody" id="d_body"></div>
+</div>
+
+<div class="mask" id="mask">
+  <div class="modal">
+    <h4 id="m_title">正在抓取期权链</h4>
+    <p id="m_desc">首次抓取约 30–90 秒，之后改参数不用重抓。</p>
+    <div class="pbar"><i id="m_bar"></i></div>
+    <div class="pinfo"><span id="m_left">准备中</span><span id="m_right"></span></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const fmt = {
+  money: (v, d=2) => (v||v===0) ? '$' + Number(v).toFixed(d) : '—',
+  num: (v, d=0) => (v||v===0) ? Number(v).toLocaleString('en-US', {maximumFractionDigits:d, minimumFractionDigits:d}) : '—',
+  pct: (v, d=1) => (v||v===0) ? Number(v).toFixed(d) + '%' : '—',
+  cap: v => { if(!v) return '—'; const y = v/1e8; return y >= 10000 ? (y/10000).toFixed(2)+'万亿' : fmt.num(y)+'亿'; },
+  sign: (v, d=1) => (v>0?'+':'') + Number(v).toFixed(d),
+};
+const S = {
+  meta:null, job:null, data:null, params:null,
+  tab:'pass', q:'', famous:false, cat:'all',
+  sort:{pass:{key:'score',dir:-1}, rej:{key:'marketCap',dir:-1}, all:{key:'score',dir:-1}},
+  sel:null, poll:null, theme: localStorage.getItem('ivcrush.theme') || 'light',
+};
+const PKEYS = ['start','end','min_cap','min_price','max_price','min_roi','min_oi','max_spread','workers','include_passed'];
+
+/* ---------------- 参数 ---------------- */
+function paramsFromUI(){
+  const v = id => $(id).value;
+  return {
+    start: v('p_start') || '', end: v('p_end') || '',
+    min_cap: (parseFloat(v('p_cap'))||0) * 1e8,
+    min_price: parseFloat(v('p_pmin'))||0, max_price: parseFloat(v('p_pmax'))||0,
+    min_roi: parseFloat(v('p_roi'))||0, min_oi: parseFloat(v('p_oi'))||0,
+    max_spread: (parseFloat(v('p_spread'))||0)/100,
+    min_dte: parseInt(v('p_dte'))||1,
+    workers: parseInt(v('p_workers'))||8,
+    include_passed: $('p_passed').checked,
+  };
+}
+function fillUI(p){
+  const d = S.meta || {};
+  $('p_start').value = p.start || d.today || '';
+  $('p_end').value = p.end || (d.week ? d.week[1] : '');
+  $('p_cap').value = Math.round((p.min_cap||0)/1e8);
+  $('p_pmin').value = p.min_price; $('p_pmax').value = p.max_price;
+  $('p_roi').value = p.min_roi; $('p_oi').value = p.min_oi;
+  $('p_spread').value = Math.round((p.max_spread||0)*100);
+  $('p_dte').value = p.min_dte || 1;
+  $('p_workers').value = p.workers || 8;
+  $('p_passed').checked = !!p.include_passed;
+  localStorage.setItem('ivcrush.params', JSON.stringify(p));
+}
+function savedParams(){
+  try{ const s = JSON.parse(localStorage.getItem('ivcrush.params')); if(s && s.min_roi!=null) return s; }catch(e){}
+  return null;
+}
+
+/* ---------------- 请求 ---------------- */
+async function api(path, opts){
+  const r = await fetch(path, opts);
+  const j = await r.json().catch(()=>({error:'返回不是 JSON'}));
+  if(!r.ok) throw new Error(j.error || ('HTTP '+r.status));
+  return j;
+}
+function toast(msg, ms=2200){
+  const t = $('toast'); t.textContent = msg; t.classList.add('on');
+  clearTimeout(t._h); t._h = setTimeout(()=>t.classList.remove('on'), ms);
+}
+
+async function startScan(refresh){
+  const p = paramsFromUI();
+  fillUI(p);
+  showMask(true, refresh ? '正在重新抓取期权链' : '正在读取数据');
+  try{
+    const r = await api('/api/scan', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({params:p, refresh:!!refresh})});
+    S.job = r.job;
+    if(r.cached){ showMask(false); await loadResult(); toast('用了 30 分钟内的缓存快照'); }
+    else pollProgress();
+  }catch(e){
+    showMask(false); toast('启动失败：'+e.message, 4000);
+  }
+}
+function pollProgress(){
+  clearInterval(S.poll);
+  S.poll = setInterval(async ()=>{
+    try{
+      const p = await api('/api/progress?job='+S.job);
+      const tot = p.total || 0, done = p.done || 0;
+      $('m_bar').style.width = (tot ? Math.min(100, done/tot*100) : 8) + '%';
+      $('m_left').textContent = p.phase === 'calendar' ? '拉取财报日历…'
+        : p.phase === 'chain' ? `核查期权链 ${done}/${tot}　${p.current||''}`
+        : p.phase === 'done' ? '完成' : p.phase;
+      $('m_right').textContent = p.elapsed ? p.elapsed.toFixed(0)+'s' : '';
+      if(p.error){ clearInterval(S.poll); showMask(false); toast('抓取失败：'+p.error, 5000); return; }
+      if(p.finished){ clearInterval(S.poll); showMask(false); await loadResult(); }
+    }catch(e){ clearInterval(S.poll); showMask(false); toast(e.message, 4000); }
+  }, 700);
+}
+async function loadResult(){
+  try{
+    const d = await api('/api/result?job='+S.job);
+    S.data = d; S.params = d.params;
+    renderAll();
+    if(S._deepSym){ const s = S._deepSym; S._deepSym = null; openDrawer(s); }
+  }catch(e){ toast('读取结果失败：'+e.message, 4000); }
+}
+async function applyFilter(){
+  if(!S.job || !S.data){ return startScan(false); }
+  const p = paramsFromUI(); fillUI(p);
+  try{
+    const d = await api('/api/filter', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({job:S.job, params:p})});
+    S.data = d; S.params = d.params; renderAll(); toast('已按新门槛重算');
+  }catch(e){ toast('重算失败：'+e.message, 4000); }
+}
+function showMask(on, title){
+  $('mask').classList.toggle('on', on);
+  if(on){ $('m_title').textContent = title || '正在抓取'; $('m_bar').style.width='6%'; $('m_left').textContent='准备中'; $('m_right').textContent=''; }
+}
+
+/* ---------------- 渲染 ---------------- */
+function renderAll(){ renderHead(); renderKPI(); renderCats(); renderTable(); if(S.sel) openDrawer(S.sel, true); }
+
+function renderHead(){
+  const m = S.data?.meta, st = S.data?.stats;
+  if(!m) return;
+  $('hmeta').innerHTML =
+    `<span>窗口 <b>${m.start.slice(5)} ~ ${m.end.slice(5)}</b></span>` +
+    `<span>美东 <b>${m.nowEt}</b></span>` +
+    `<span>抓取 <b>${(m.fetchedAt||'').slice(11)}</b></span>` +
+    (st?.failedDays?.length ? `<span class="pill f">${st.failedDays.length} 天拉取失败</span>` : '');
+  $('n_pass').textContent = st.passed; $('n_rej').textContent = st.rejected; $('n_all').textContent = st.total;
+}
+
+function renderKPI(){
+  const st = S.data.stats;
+  const k = [
+    {lab:'日历原始', val: st.calendarRows, sub:'本周全部发财报的公司', cls:''},
+    {lab:'市值过关', val: st.checked, sub:`≥ ${fmt.cap(S.params.min_cap)}`, cls:''},
+    {lab:'通过硬门槛', val: st.passed, sub:'六道全部达标', cls:'pass'},
+    {lab:'淘汰', val: st.rejected, sub:'含市值不足', cls:'fail'},
+    {lab:'通过率', val: st.checked ? (st.passed/st.checked*100).toFixed(1)+'%' : '0%',
+     sub:'占市值过关家数', cls:''},
+  ];
+  $('kpis').innerHTML = k.map(x=>`<div class="kpi ${x.cls}">
+    <div class="lab">${x.lab}</div><div class="val">${x.val}</div><div class="sub">${x.sub}</div></div>`).join('');
+}
+
+function renderCats(){
+  const st = S.data.stats, by = st.byCat || {};
+  const rows = (st.catOrder||[]).filter(c=>by[c]);
+  if(!rows.length){ $('cats').style.display='none'; return; }
+  $('cats').style.display='block';
+  const max = Math.max(...rows.map(c=>by[c]));
+  $('cats').innerHTML = '<h4>淘汰分布（点一行只看这类）</h4>' + rows.map(c=>`
+    <div class="catrow ${S.cat===c?'on':''}" data-cat="${c}">
+      <span class="cn">${c}</span>
+      <span class="catbar"><i style="width:${by[c]/max*100}%"></i></span>
+      <span class="cv">${by[c]}</span>
+    </div>`).join('');
+  $('cats').querySelectorAll('.catrow').forEach(el=>el.onclick=()=>{
+    S.cat = (S.cat===el.dataset.cat) ? 'all' : el.dataset.cat;
+    if(S.cat!=='all' && S.tab==='pass') S.tab='rej';
+    renderCats(); syncTabs(); renderTable();
+  });
+}
+
+const COLS = {
+  pass:[
+    {k:'symbol', t:'代码', al:'l'}, {k:'name', t:'公司', al:'l'},
+    {k:'date', t:'财报'}, {k:'expiry', t:'到期'}, {k:'price', t:'股价'}, {k:'marketCap', t:'市值'},
+    {k:'emPct', t:'预期波动'}, {k:'lem', t:'LEM'}, {k:'strike1', t:'卖 K'},
+    {k:'prem1', t:'权利金'}, {k:'roi1', t:'年化'}, {k:'ret', t:'绝对'}, {k:'oi1', t:'持仓'},
+    {k:'spread1', t:'点差'}, {k:'cushion', t:'安全垫'}, {k:'score', t:'综合分'},
+  ],
+  rej:[
+    {k:'symbol', t:'代码', al:'l'}, {k:'name', t:'公司', al:'l'},
+    {k:'date', t:'财报'}, {k:'price', t:'股价'}, {k:'marketCap', t:'市值'},
+    {k:'gate', t:'关卡'}, {k:'reason', t:'淘汰原因', al:'l', nosort:1}, {k:'gap', t:'差距', al:'l', nosort:1},
+  ],
+};
+COLS.all = [
+  {k:'symbol', t:'代码', al:'l'}, {k:'name', t:'公司', al:'l'}, {k:'date', t:'财报'},
+  {k:'marketCap', t:'市值'}, {k:'verdict', t:'结论', nosort:1}, {k:'roi1', t:'年化'},
+  {k:'score', t:'综合分'}, {k:'reason', t:'说明', al:'l', nosort:1},
+];
+
+function rowsFor(){
+  const d = S.data; if(!d) return [];
+  let rows = S.tab==='pass' ? d.passed.slice() : S.tab==='rej' ? d.rejected.slice() : d.passed.concat(d.rejected);
+  if(S.tab==='rej' && S.cat!=='all') rows = rows.filter(r=>r.cat===S.cat);
+  if(S.q){ const q = S.q.toLowerCase(); rows = rows.filter(r=>(r.symbol||'').toLowerCase().includes(q) || (r.name||'').toLowerCase().includes(q)); }
+  if(S.famous) rows = rows.filter(r=>(r.marketCap||0) >= 5e10);
+  const s = S.sort[S.tab] || {key:'score', dir:-1};
+  rows.sort((a,b)=>{
+    let x = a[s.key], y = b[s.key];
+    if(s.key==='gap'){ x = a.gap?.value; y = b.gap?.value; }
+    if(typeof x === 'string' || typeof y === 'string') return String(x||'').localeCompare(String(y||'')) * s.dir;
+    return ((x||0) - (y||0)) * s.dir;
+  });
+  return rows;
+}
+
+function syncTabs(){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on', t.dataset.tab===S.tab));
+}
+
+function renderTable(){
+  const rows = rowsFor();
+  const cols = COLS[S.tab];
+  const s = S.sort[S.tab];
+  $('thead').innerHTML = '<tr>' + cols.map(c=>{
+    const arrow = s.key===c.k ? `<span class="arrow">${s.dir<0?'▼':'▲'}</span>` : '';
+    return `<th data-k="${c.k}" data-nosort="${c.nosort?1:0}" style="text-align:${c.al==='l'?'left':'right'}">${c.t}${arrow}</th>`;
+  }).join('') + '</tr>';
+  $('thead').querySelectorAll('th').forEach(th=>{
+    if(th.dataset.nosort==='1'){ th.style.cursor='default'; return; }
+    th.onclick = ()=>{ const k = th.dataset.k;
+      S.sort[S.tab] = {key:k, dir: (s.key===k ? -s.dir : (k==='gate'?1:-1))};
+      renderTable(); };
+  });
+
+  $('tbody').innerHTML = rows.map(r=>`<tr data-sym="${r.symbol}" class="${S.sel===r.symbol?'sel':''}">${cell(r, S.tab)}</tr>`).join('');
+  $('tbody').querySelectorAll('tr').forEach(tr=>tr.onclick=()=>openDrawer(tr.dataset.sym));
+
+  const empty = $('empty');
+  if(!rows.length){
+    empty.style.display='block';
+    empty.innerHTML = S.tab==='pass'
+      ? `<b>没有标的通过全部硬门槛</b>门槛没有放宽。看「不适合做」里的差距，或把年化门槛、点差上限调松一点再试。`
+      : `<b>这个条件下没有匹配的标的</b>换个筛选条件，或点「重新抓取」。`;
+  } else empty.style.display='none';
+}
+
+function cell(r, tab){
+  const fam = (r.marketCap||0) >= 5e10 ? '<span class="famous">名企</span>' : '';
+  const when = r.date ? `${r.date.slice(5)} <span style="color:var(--dim)">${r.time||''}</span>` : '—';
+  const sym = `<td><span class="sym">${r.symbol}</span>${fam}</td>`;
+  const nm  = `<td><span class="nm" title="${(r.name||'').replace(/"/g,'')}">${r.name||''}</span></td>`;
+
+  if(tab==='pass'){
+    const roi = r.roi1||0;
+    return sym+nm+`<td>${when}</td>
+      <td class="num">${r.expiry?r.expiry.slice(5):'—'} <span class="${r.dteWarn?'neg':'dim'}" style="font-size:11px">${r.dte}天</span></td>
+      <td class="num">${fmt.money(r.price)}</td><td class="num">${fmt.cap(r.marketCap)}</td>
+      <td class="num">±${fmt.money(r.em)} <span style="color:var(--dim)">${fmt.pct(r.emPct)}</span></td>
+      <td class="num">${fmt.money(r.lem)}</td><td class="num">${r.strike1}</td>
+      <td class="num">${fmt.money(r.prem1)}</td>
+      <td class="num ${roi>=100?'pos':''}">${fmt.pct(roi,0)}</td>
+      <td class="num">${fmt.pct(r.ret,2)}</td>
+      <td class="num">${fmt.num(r.oi1)}</td><td class="num">${fmt.pct((r.spread1||0)*100,0)}</td>
+      <td class="num">${fmt.pct(r.cushion)}</td>
+      <td class="num"><b>${r.score||0}</b></td>`;
+  }
+  if(tab==='rej'){
+    return sym+nm+`<td>${when}</td><td class="num">${r.price?fmt.money(r.price):'—'}</td><td class="num">${fmt.cap(r.marketCap)}</td>
+      <td>${(r.gate>=1&&r.gate<=6)?`<span class="pill w">第${r.gate}关</span>`:`<span class="pill g">${r.gate===9?'数据':'—'}</span>`}</td>
+      <td style="text-align:left;white-space:normal;max-width:330px">${r.reason||''}</td>
+      <td style="text-align:left">${gapCell(r)}</td>`;
+  }
+  const ok = r.verdict==='通过';
+  return sym+nm+`<td>${when}</td><td class="num">${fmt.cap(r.marketCap)}</td>
+    <td><span class="pill ${ok?'p':'w'}">${r.verdict}</span></td>
+    <td class="num">${r.roi1?fmt.pct(r.roi1,0):'—'}</td>
+    <td class="num">${r.score||'—'}</td>
+    <td style="text-align:left;white-space:normal;max-width:340px;color:var(--muted)">${ok?'六道门槛全过':(r.reason||'')}</td>`;
+}
+
+function gapCell(r){
+  const g = r.gap || {};
+  if(!g.metric){
+    return r.cat==='无当周合约' ? '<span style="color:var(--dim)">结构问题</span>'
+      : '<span style="color:var(--dim)">—</span>';
+  }
+  const ratio = g.threshold ? Math.min(1, (g.value||0)/g.threshold) : 0;
+  const unit = g.unit || '';
+  const dg = g.unit === '%' ? 1 : 0;
+  const v = g.unit === '$' ? '$'+Number(g.value).toFixed(2) : Number(g.value).toFixed(dg)+unit;
+  const t = g.unit === '$' ? '$'+Number(g.threshold).toFixed(0) : Number(g.threshold).toFixed(dg)+unit;
+  return `<span class="gapbar"><i style="width:${ratio*100}%"></i></span>
+    <span class="num">${v} <span style="color:var(--dim)">/ 需 ${t}</span></span>`;
+}
+
+/* ---------------- 抽屉 ---------------- */
+async function openDrawer(sym, silent){
+  S.sel = sym;
+  document.querySelectorAll('#tbody tr').forEach(tr=>tr.classList.toggle('sel', tr.dataset.sym===sym));
+  const all = (S.data.passed||[]).concat(S.data.rejected||[]);
+  const r = all.find(x=>x.symbol===sym);
+  if(!r) return;
+  $('drawer').classList.add('on');
+  $('d_sym').textContent = r.symbol;
+  $('d_sub').innerHTML = `${r.name||''}　·　${r.date? r.date+' '+r.time : ''}　·　市值 ${fmt.cap(r.marketCap)}`;
+  const ok = r.verdict==='通过';
+  let h = '';
+
+  if(r.dteWarn && ok){
+    h += `<div class="dsec" style="background:var(--warn-bg);border-radius:6px;padding:8px 10px;margin-bottom:12px">
+      <span style="color:var(--warn);font-size:12px">距到期仅 ${r.dte} 天：年化 ROI 被 365/${r.dte} 放大，
+      判断值不值看「绝对收益 ${fmt.pct(r.ret,2)}」，别被年化数字带跑。</span></div>`;
+  }
+  h += `<div class="dsec"><h5>结论</h5>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <span class="pill ${ok?'p':'w'}" style="font-size:12px">${ok?'通过硬门槛':'不适合 · 卡在第'+(r.gate||'-')+'关'}</span>
+      ${ok?`<span style="color:var(--muted);font-size:12px">综合分 <b class="num">${r.score}</b></span>`:''}
+    </div>
+    ${ok?'':`<div style="color:var(--warn);font-size:12.5px">${r.reason||''}</div>`}</div>`;
+
+  if(ok){
+    h += `<div class="dsec"><h5>为什么适合</h5><ul class="why">${
+      (r.highlights||[]).map(x=>`<li>${x}</li>`).join('')}</ul></div>`;
+  } else if(r.gap && r.gap.metric){
+    const g = r.gap;
+    h += `<div class="dsec"><h5>差在哪</h5>
+      <div class="kv"><span>${g.metric} 实测</span><b>${g.unit==='$'?'$':''}${Number(g.value).toFixed(g.unit==='$'?2:0)}${g.unit&&g.unit!=='$'?g.unit:''}</b></div>
+      <div class="kv"><span>门槛要求</span><b>${g.unit==='$'?'$':''}${Number(g.threshold).toFixed(0)}${g.unit&&g.unit!=='$'?g.unit:''}</b></div>
+      <div style="color:var(--muted);font-size:12px;margin-top:6px">
+        ${g.dir==='high'?'实测高于上限，属于反向淘汰。':g.dir==='low'?'差一口气就能进名单，把对应门槛调松可以看到它。':'结构性问题，调门槛也解决不了。'}
+      </div></div>`;
+  }
+
+  h += `<div class="dsec"><h5>关键数字</h5><div class="grid2">
+    <div class="kv"><span>现价</span><b>${fmt.money(r.price)}</b></div>
+    <div class="kv"><span>预期波动 EM</span><b>${r.em? '±'+fmt.money(r.em)+'（'+fmt.pct(r.emPct)+'）':'—'}</b></div>
+    <div class="kv"><span>预期下界 LEM</span><b>${fmt.money(r.lem)}</b></div>
+    <div class="kv"><span>到期 / DTE</span><b>${r.expiry? r.expiry.slice(5)+' / '+r.dte+'天':'—'}</b></div>
+    <div class="kv"><span>目标行权价</span><b>${r.strike1||'—'}</b></div>
+    <div class="kv"><span>权利金</span><b>${r.prem1?fmt.money(r.prem1):'—'}</b></div>
+    <div class="kv"><span>年化 ROI</span><b class="${(r.roi1||0)>=60?'pos':''}">${r.roi1?fmt.pct(r.roi1,0):'—'}</b></div>
+    <div class="kv"><span>绝对收益</span><b>${r.ret?fmt.pct(r.ret,2):'—'}</b></div>
+    <div class="kv"><span>持仓量</span><b>${r.oi1?fmt.num(r.oi1):'—'}</b></div>
+    <div class="kv"><span>点差</span><b>${r.spread1?fmt.pct(r.spread1*100,0):'—'}</b></div>
+    <div class="kv"><span>安全垫</span><b>${r.cushion?fmt.pct(r.cushion):'—'}</b></div>
+    <div class="kv"><span>盈亏平衡</span><b>${r.breakeven?fmt.money(r.breakeven):'—'}</b></div>
+    <div class="kv"><span>单手现金担保</span><b>${r.cash?fmt.money(r.cash,0):'—'}</b></div>
+  </div></div>`;
+
+  h += `<div class="dsec"><h5>期权链阶梯（当周到期 · Put 侧）</h5>
+    <div id="d_ladder" style="color:var(--muted);font-size:12px">加载中…</div></div>`;
+
+  h += `<div class="dsec links"><h5>外部核对</h5>
+    <a href="https://www.nasdaq.com/market-activity/stocks/${sym.toLowerCase()}/option-chain" target="_blank" rel="noopener">Nasdaq 期权链</a>
+    <a href="https://www.barchart.com/stocks/quotes/${sym}/options" target="_blank" rel="noopener">Barchart 期权</a>
+    <a href="https://stockanalysis.com/stocks/${sym.toLowerCase()}/financials/?p=quarterly" target="_blank" rel="noopener">季度财报</a>
+    <a href="https://www.earnings-watcher.com/" target="_blank" rel="noopener">历史跳空</a>
+  </div>`;
+
+  $('d_body').innerHTML = h;
+  $('d_body').scrollTop = 0;
+  loadLadder(sym, r.strike1);
+}
+
+async function loadLadder(sym, pick){
+  try{
+    const d = await api(`/api/detail?job=${S.job}&symbol=${encodeURIComponent(sym)}`);
+    const box = $('d_ladder'); if(!box) return;
+    if(d.error || !d.ladder || !d.ladder.length){
+      box.textContent = d.alt ? `没有当周合约，数据源最近到期 ${d.alt}` : (d.error || '没有可用的期权链数据');
+      return;
+    }
+    const maxRoi = Math.max(...d.ladder.map(x=>x.roi), 1);
+    const rows = d.ladder.map(x=>{
+      const isPick = pick && Math.abs(x.k - pick) < 0.001;
+      return `<tr class="${isPick?'pick':''}">
+        <td>${x.k}</td><td>${x.dist.toFixed(1)}%</td>
+        <td>${x.bid.toFixed(2)}</td><td>${x.ask.toFixed(2)}</td>
+        <td>${fmt.num(x.oi)}</td>
+        <td><span class="rbar"><i style="width:${Math.min(100,x.roi/maxRoi*100)}%"></i></span> ${x.roi.toFixed(0)}%</td>
+        <td>${x.spread>=999?'—':x.spread.toFixed(0)+'%'}</td></tr>`;
+    }).join('');
+    box.innerHTML = `<table class="ladder"><thead><tr>
+      <th>行权价</th><th>距现价</th><th>买价</th><th>卖价</th><th>持仓</th><th>年化</th><th>点差</th>
+    </tr></thead><tbody>${rows}</tbody></table>
+    <div style="color:var(--dim);font-size:11px;margin-top:6px">
+      绿色行为当前目标行权价。距现价越远权利金越薄，安全垫越厚。</div>`;
+  }catch(e){
+    const box = $('d_ladder'); if(box) box.textContent = '阶梯数据读取失败：'+e.message;
+  }
+}
+
+/* ---------------- 事件 ---------------- */
+function shiftDate(iso, days){
+  const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0,10);
+}
+$('btnThisWeek').onclick = ()=>{
+  const d = S.meta || {};
+  $('p_start').value = d.today || ''; $('p_end').value = (d.week||[])[1] || '';
+  toast('已切到本周剩余交易日');
+};
+$('btnNextWeek').onclick = ()=>{
+  const d = S.meta || {};
+  const mon = shiftDate((d.week||[])[1] || d.today, 3);
+  $('p_start').value = mon; $('p_end').value = shiftDate(mon, 4);
+  toast('已切到下周一整周');
+};
+$('btnApply').onclick = applyFilter;
+$('btnRefresh').onclick = ()=>startScan(true);
+$('btnReset').onclick = ()=>{
+  localStorage.removeItem('ivcrush.params');
+  const d = S.meta.defaults;
+  fillUI({...d, start:'', end:''});
+  toast('已恢复默认参数，点「应用筛选」生效');
+};
+$('btnAside').onclick = ()=>$('aside').classList.toggle('hidden');
+$('btnTheme').onclick = ()=>{
+  S.theme = S.theme==='dark'?'light':'dark';
+  document.documentElement.dataset.theme = S.theme;
+  localStorage.setItem('ivcrush.theme', S.theme);
+  $('btnTheme').textContent = S.theme==='dark'?'浅色':'深色';
+};
+$('q').oninput = e=>{ S.q = e.target.value.trim(); renderTable(); };
+$('famous').onchange = e=>{ S.famous = e.target.checked; renderTable(); };
+$('d_close').onclick = ()=>{ $('drawer').classList.remove('on'); S.sel=null;
+  document.querySelectorAll('#tbody tr').forEach(t=>t.classList.remove('sel')); };
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+  S.tab = t.dataset.tab; syncTabs(); renderTable();
+  const u = new URL(location.href); u.searchParams.set('tab', S.tab); history.replaceState(null,'',u);
+});
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') $('d_close').click(); });
+
+/* ---------------- 启动 ---------------- */
+function applyDeepLink(){
+  const q = new URLSearchParams(location.search);
+  const tab = q.get('tab');
+  if(tab && ['pass','rej','all'].includes(tab)) S.tab = tab;
+  const th = q.get('theme');
+  if(th === 'dark' || th === 'light'){ S.theme = th; localStorage.setItem('ivcrush.theme', th); }
+  S._deepSym = q.get('sym');
+}
+
+(async function boot(){
+  applyDeepLink();
+  document.documentElement.dataset.theme = S.theme;
+  $('btnTheme').textContent = S.theme==='dark'?'浅色':'深色';
+  try{
+    S.meta = await api('/api/meta');
+    const p = savedParams() || {...S.meta.defaults, start:'', end:''};
+    fillUI(p);
+  }catch(e){
+    $('empty').style.display='block';
+    $('empty').innerHTML = '<b>连不上本地服务</b>请在技能目录运行：python3 scripts/serve.py';
+    return;
+  }
+  startScan(false);
+})();
+</script>
+</body>
+</html>
